@@ -326,7 +326,7 @@ angry_tf_idf <- angry_join %>%
 	bind_tf_idf(word, annotation, n) %>% 
 	arrange(desc(tf_idf))
 
-angry_tf_idf %>% 
+angry_plot <- angry_tf_idf %>% 
 	group_by(annotation) %>% 
 	# Selecting ten most used words within each annotation
 	slice_max(tf_idf, n = 10) %>% 
@@ -338,5 +338,8 @@ angry_tf_idf %>%
 	facet_wrap(~annotation, ncol=2, scales="free") + 
 	theme_minimal() + 
 	labs(y = NULL)
+
+ggsave("angry_plot.png", plot=angry_plot)
+
 ```
 
