@@ -126,122 +126,32 @@ Let's Roll!
 *Remember to assign your results to variables as we're gonna use them later!*
 Q1: Scrape 3000 recent tweets from the hashtag #dkpol not involving retweets (HINT: check ?search_tweets)
 
-```{r}
-dkpol <- search_tweets("#dkpol", n=3000, include_rts = F)
-```
-
-
 Q2: Scrape 3000 tweets about culture or art
-```{r}
-cultureart <- search_tweets('culture OR art', n=3000, type="recent")
-```
+
 
 Q3: Scrape 3000 popular tweets about climate change in english (you figure out a suitable search string) (hint: use the "lang" flag)
-```{r}
-search_string <- 'climate OR "global warming" OR #COP26 lang:en'
-climate <- search_tweets(search_string, n=3000, type="popular")
-
-```
-
-
 
 ## Analysis Exercises
 Q1: What are the oldest and newest tweets from your #dkpol-data? What does that say about the Twitter API 
-```{r}
-dkpol %>% 
-	summarise(oldest_tweet = min(created_at), 
-						newest_tweet = max(created_at))
-```
+
 
 Q2: Who are the 10 most popular tweeters in culture and art? (hint: check out the variables `favourite_count` and `retweet_count`)
-```{r}
-cultureart %>% 
-	mutate(popularity_score = favorite_count + retweet_count) %>% 
-	group_by(screen_name, description) %>% 
-	summarise(total_popularity = sum(popularity_score)) %>% 
-	ungroup() %>% 
-	slice_max(total_popularity, n=10)
-```
 
-Q3: What words are most often used to tweet about climate change? (excluding stop-words and your search terms) (HINT: use the )
-```{r}
-stop_words <- stopwordslangs %>% 
-	filter((lang == "en") & p>0.99999)
-stop_words
-
-climate %>% 
-	select(text) %>% 
-	unnest_tokens(word, text) %>% 
-	anti_join(stop_words, by="word") %>% 
-	count(word, sort=T)
-```
-
+Q3: What words are most often used to tweet about climate change? (excluding stop-words and your search terms) (HINT: use the `stopwordslangs`-dataframe from the walkthrough)
 
 ## Visualization Exercises 
 Q1: Create a line graph of activaty over the course of a day. Which time of the day is #dkpol most active? (hint: use the `lubridate::hour()` function combined with `count()`)
-```{r}
-dkpol %>% 
-	mutate(hours = lubridate::hour(created_at)) %>% 
-	count(hours) %>% 
-	ggplot(aes(hours, n)) +
-	geom_line() +
-	theme_minimal() + 
-	labs(title = "Twitter activity throughout the day", 
-			 subtitle = "Tweets from DKPol",
-			 x = "Clock", 
-			 y = "Number of tweets")
-	
-```
+
 Q2: Create a density chart for the three most used sources for the culture tweets - are there any differences in average number of likes? (HINT: the most used sourced are "Twitter for Android", "Twitter for iPhone" and "Twitter Web App" if you don't want to find them programmatically)
-```{r}
-# Find the three most used sources
-most_used <- cultureart %>% 
-	group_by(source) %>% 
-	count() %>% 
-	ungroup() %>% 
-	slice_max(n, n=3) %>% 
-	pull(source)
-
-cultureart %>% 
-	filter(source %in% most_used) %>% 
-	mutate(popularity = retweet_count + favorite_count, 
-				 log_popularity = log(popularity)) %>% 
-	ggplot(aes(x = log_popularity, fill = source)) + 
-	geom_density(alpha=0.7) + 
-	theme_minimal()
-
-
-```
 
 Q3: Create a bar chart of the most used hashtags in the climate data
-```{r}
-climate %>%
-	# Column with hashtags (list of vectors)
-	select(hashtags) %>% 
-	# Expanding the lists
-	unnest(hashtags) %>% 
-	drop_na() %>%
-	count(hashtags) %>% 
-	slice_max(n, n=15) %>% 
-	# fct_reorder() orders the columns
-	ggplot(aes(x = fct_reorder(hashtags, n), y = n)) + 
-	geom_col() + 
-	coord_flip() + 
-	theme_minimal() + 
-	labs(title = "Most used climate hashtags", 
-			 x = "Hashtag")
-```
-
 
 ## Extra: AngryTweets
 Sometimes researchers scrape a bunch of twitter data for you to enjoy. However, because of Twitter's terms of service, they are only allowed to post the data in *dehydrated* format (that is, only as an ID). The following sections will guide you through how to analyze one of these datasets - the "AngryTweets" dataset from Alexandra Instituttet. 
 
 ### Step 1: Load and clean
 Q1: Download the AngryTweets data from [here](https://github.com/alexandrainst/danlp/blob/master/docs/docs/datasets.md#angrytweets) and load it into R.  
-```{r}
-angry_raw <- read_csv("./data/game_tweets.csv", 
-											col_types = cols(twitterid = col_character()))
-```
+
 Q2: Clean the `annotation`-column, so it only includes "positive", "negative" and "neutral" for annotaters who agree. (use the function)
 ```{r}
 extract_annotations <- function(str_vec) {
@@ -252,91 +162,19 @@ extract_annotations <- function(str_vec) {
 	first_word <- map_chr(extracted_words, 1) # First word from sublist
 	return(ifelse(is_the_same, first_word, NA))
 }
-
-
-angry_clean <- angry_raw %>% 
-	mutate(annotation = extract_annotations(annotation), 
-				 annotation = na_if(annotation, "skip")) %>% 
-	drop_na()
 ```
 
 
 
 Q2: In a new tibble, scrape all the tweets from the angrytweets data (HINT: use the `lookup_statuses()`-function)
-```{r}
-angry_scraped <- lookup_statuses(angry_raw$twitterid)
-angry_scraped_clean <- angry_scraped %>% 
-	select(status_id, created_at, screen_name, text, favorite_count, retweet_count)
-```
+
 
 Q3: Join the two tibbles
-```{r}
-angry_join <- angry_clean %>% 
-	left_join(angry_scraped_clean, by = c("twitterid"="status_id"))
-```
+
 
 ### Step 2: Analyze! 
 Q1: Who is the most and least positive person? (extra: can you solve this using a function?)
-```{r}
-find_top_tweeter <- function(tweet_df, annotation_type) {
-	tweet_df %>% 
-		filter(annotation==annotation_type) %>% 
-		group_by(screen_name) %>% 
-		count() %>% 
-		ungroup() %>% 
-		drop_na() %>% 
-		slice_max(n)
-}
 
-
-# Positive
-angry_join %>% 
-	find_top_tweeter("positiv")
-
-# Negativ
-angry_join %>% 
-	find_top_tweeter("negativ")
-
-```
 Q2: How has the proportion of positive and negative tweets changed over time? 
-```{r}
-angry_join %>% 
-	select(created_at, annotation) %>% 
-	drop_na() %>% 
-	filter(annotation %in% c("positiv", "negativ")) %>% 
-	mutate(date = lubridate::week(created_at)) %>% 
-	group_by(date) %>% 
-	summarise(num_negativ = sum(annotation=="negativ"), 
-						num_positiv = sum(annotation=="positiv")) %>% 
-	ggplot(aes(x=date)) + 
-	geom_line(aes(y=num_negativ), colour="red") + 
-	geom_line(aes(y=num_positiv), colour="green") + 
-	theme_minimal() + 
-	labs(title = "Positivity vs Negativity over time", 
-			 subtitle = "Green is positive, red is negative", 
-			 y = "Number of Tweets")
-```
+
 Q3 (Advanced): Create a TF-IDF of the different sentiment types. What words are most used in each? (HINT: check out [This guide](https://www.tidytextmining.com/tfidf.html))
-```{r}
-# Creating the tf_idf
-angry_tf_idf <- angry_join %>% 
-	select(annotation, text) %>% 
-	unnest_tokens(word, text) %>% 
-	count(annotation, word, sort=T) %>% 
-	bind_tf_idf(word, annotation, n) %>% 
-	arrange(desc(tf_idf))
-
-angry_tf_idf %>% 
-	group_by(annotation) %>% 
-	# Selecting ten most used words within each annotation
-	slice_max(tf_idf, n = 10) %>% 
-	ungroup() %>% 
-	# fct_reorder() sorts the word in terms of it's tf-idf
-	ggplot(aes(tf_idf, fct_reorder(word, tf_idf), fill=annotation)) + 
-	geom_col(show.legend = FALSE) + 
-	# scales="free" makes each facet have it's own scale
-	facet_wrap(~annotation, ncol=2, scales="free") + 
-	theme_minimal() + 
-	labs(y = NULL)
-```
-
