@@ -1,0 +1,342 @@
+---
+title: "Tweets in R"
+author: "Jonathan Rystrøm"
+date: "12/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+Twitter is a true treasure trove of lovely data. However, starting with the analysis can be a bit daunting. This notebook will help you get started as well with scraping and analyzing this lovely data! You will learn the following: 
+
+- How to set up rtweet-package to access the twitter API
+- How to write great queries for getting the data
+- How to navigate the output of the API
+- Some cool analyses and visualizations
+
+Let's get started!
+
+### Loading libraries
+There are three new packages you need for getting the most out of twitter API. The first is `pacman` (short for "package manager"), which is an awesome package for working loading other packages. This combines `install.packages("you_package)` and `library(your_package)` in a convenient way. 
+Secondly is rtweet, which will be our main interface with the twitter api. You can check out the documentation [here](https://www.rdocumentation.org/packages/rtweet/versions/0.7.0) if you're need to check out functionality. 
+Lastly, is `tidytext` which provides some nice tidy functions for working with text. 
+```{r}
+#install.packages("pacman")
+pacman::p_load(
+	rtweet
+	, tidyverse
+	, tidytext
+	, lubridate
+)
+```
+
+
+## Using the rtweet-package
+### Goal
+Here is a quick run-through of an example analysis using rtweet. The analysis will center around tweets from the #metoo movement. 
+
+### Authorization
+The first step when using rtweet is to get authorization. Luckily, this is done automagically when we start using the functions. For some more advanced workflows, like scraping specific users you will need a twitter developer account. You can apply by following [this link](https://developer.twitter.com/en/apply-for-access). 
+
+### Searching for tweets
+The main function for searching for tweets is (unsurprisingly) `search_tweets()`. The most important parameter here is "q" (for query) which allows you to send a search string to the twitter API. A search string might be as simple as "#metoo" for tweets including that hashtag but also more complicated such as "#metoo OR #YesAllWomen filter:verified" for tweets with either #metoo or #yesallwomen by verified users. For a full description write `?search_tweets()`
+
+For our purpose we will look at only metoo and only in english without any retweets. We can do this as follows: 
+```{r}
+metoo <- search_tweets("#metoo lang:en", n=5000, include_rts = F)
+```
+### Investigating the data
+Let's start by printing the head of the data
+```{r}
+head(metoo)
+```
+As we can see, we have a big bunch of 90 columns! However, many seem to be nan's. Let's have a closer look at how many missing values there are in each
+```{r}
+metoo %>% 
+	summarise(across(everything(), ~sum(is.na(.x))))
+```
+Some of the columns like `text`, `screen_name` and `created_at` are never missing, while other's like `reply_to_status_id` mostly are. In general, it is a good idea to `select()` the specific ones you need for a specific analysis, so the data becomes easier to manage. 
+
+Let's have a look at some specific tweets (located in the text column)
+```{r}
+set.seed(42)
+metoo %>% 
+	sample_n(5) %>% 
+	pull(text)
+```
+It's seems that the tweets cover both personal experiences and specific people. However, we need a more systematic analysis to say something in general. 
+
+### Analysis
+#### Important users. 
+There are many ways of investigating important users. The most simple is to look at who has the most interaction with their tweets. We define a popularity metric using the sum of retweets and favourites: 
+```{r}
+metoo <- metoo %>% 
+	mutate(reach = retweet_count + favorite_count)
+```
+
+Now we can investigate which tweets had the most reach
+```{r}
+metoo %>% 
+	arrange(desc(reach)) %>% 
+	select(created_at, screen_name, reach, text)
+```
+There are pretty huge differences in the popularity and the topics are still relatively broad. 
+Too be a bit more specific, it might be interesting to look at which words are most often used in metoo. This is were the tidytext package really shines!
+```{r}
+metoo_words <- metoo %>% 
+	unnest_tokens(word, text) %>% 
+	count(word, sort=TRUE)
+```
+That is absolutely not interesting as the top words are filled with so called stop-words. Luckily, rtweet has our back with `stopwordslang` dataframe. The dataframe includes the most used words in different languages. Let's remove the common occurences!
+
+```{r}
+stop_words <- stopwordslangs %>% 
+	filter(p > 0.9999)
+
+common_metoo_words <- metoo_words %>% 
+	anti_join(stop_words, by="word") %>% 
+	slice_max(n, n=13)
+
+```
+The first three are still a bit spurgt so we will filter those and make a nice little plot :)) 
+
+```{r}
+common_metoo_words %>% 
+	filter(n < 2000) %>% 
+	ggplot(aes(x=fct_reorder(word, n), y=n)) + 
+	geom_col() + 
+	coord_flip() + 
+	theme_minimal() + 
+	labs(title = "Most used #metoo words", 
+			 x = "Word")
+```
+
+
+# Exercises!
+Now that we've covered the basics, it's time for you to shine! A few tips for going through them: 
+- If you're in doubt about a function remember you can write `?the_function` to get help about that specific function
+- Ask your friends or Jonathan if you have any questions!
+- The twitter_scraping_solutions.Rmd has sample solutions if you either want to skip a question or see an alternative solution :))
+
+Let's Roll!
+## Search Exercises
+*Remember to assign your results to variables as we're gonna use them later!*
+Q1: Scrape 3000 recent tweets from the hashtag #dkpol not involving retweets (HINT: check ?search_tweets)
+
+```{r}
+dkpol <- search_tweets("#dkpol", n=3000, include_rts = F)
+```
+
+
+Q2: Scrape 3000 tweets about culture or art
+```{r}
+cultureart <- search_tweets('culture OR art', n=3000, type="recent")
+```
+
+Q3: Scrape 3000 popular tweets about climate change in english (you figure out a suitable search string) (hint: use the "lang" flag)
+```{r}
+search_string <- 'climate OR "global warming" OR #COP26 lang:en'
+climate <- search_tweets(search_string, n=3000, type="popular")
+
+```
+
+
+
+## Analysis Exercises
+Q1: What are the oldest and newest tweets from your #dkpol-data? What does that say about the Twitter API 
+```{r}
+dkpol %>% 
+	summarise(oldest_tweet = min(created_at), 
+						newest_tweet = max(created_at))
+```
+
+Q2: Who are the 10 most popular tweeters in culture and art? (hint: check out the variables `favourite_count` and `retweet_count`)
+```{r}
+cultureart %>% 
+	mutate(popularity_score = favorite_count + retweet_count) %>% 
+	group_by(screen_name, description) %>% 
+	summarise(total_popularity = sum(popularity_score)) %>% 
+	ungroup() %>% 
+	slice_max(total_popularity, n=10)
+```
+
+Q3: What words are most often used to tweet about climate change? (excluding stop-words and your search terms) (HINT: use the )
+```{r}
+stop_words <- stopwordslangs %>% 
+	filter((lang == "en") & p>0.99999)
+stop_words
+
+climate %>% 
+	select(text) %>% 
+	unnest_tokens(word, text) %>% 
+	anti_join(stop_words, by="word") %>% 
+	count(word, sort=T)
+```
+
+
+## Visualization Exercises 
+Q1: Create a line graph of activaty over the course of a day. Which time of the day is #dkpol most active? (hint: use the `lubridate::hour()` function combined with `count()`)
+```{r}
+dkpol %>% 
+	mutate(hours = lubridate::hour(created_at)) %>% 
+	count(hours) %>% 
+	ggplot(aes(hours, n)) +
+	geom_line() +
+	theme_minimal() + 
+	labs(title = "Twitter activity throughout the day", 
+			 subtitle = "Tweets from DKPol",
+			 x = "Clock", 
+			 y = "Number of tweets")
+	
+```
+Q2: Create a density chart for the three most used sources for the culture tweets - are there any differences in average number of likes? (HINT: the most used sourced are "Twitter for Android", "Twitter for iPhone" and "Twitter Web App" if you don't want to find them programmatically)
+```{r}
+# Find the three most used sources
+most_used <- cultureart %>% 
+	group_by(source) %>% 
+	count() %>% 
+	ungroup() %>% 
+	slice_max(n, n=3) %>% 
+	pull(source)
+
+cultureart %>% 
+	filter(source %in% most_used) %>% 
+	mutate(popularity = retweet_count + favorite_count, 
+				 log_popularity = log(popularity)) %>% 
+	ggplot(aes(x = log_popularity, fill = source)) + 
+	geom_density(alpha=0.7) + 
+	theme_minimal()
+
+
+```
+
+Q3: Create a bar chart of the most used hashtags in the climate data
+```{r}
+climate %>%
+	# Column with hashtags (list of vectors)
+	select(hashtags) %>% 
+	# Expanding the lists
+	unnest(hashtags) %>% 
+	drop_na() %>%
+	count(hashtags) %>% 
+	slice_max(n, n=15) %>% 
+	# fct_reorder() orders the columns
+	ggplot(aes(x = fct_reorder(hashtags, n), y = n)) + 
+	geom_col() + 
+	coord_flip() + 
+	theme_minimal() + 
+	labs(title = "Most used climate hashtags", 
+			 x = "Hashtag")
+```
+
+
+## Extra: AngryTweets
+
+
+### Step 1: Load and clean
+Q1: Download the AngryTweets data from [here](https://github.com/alexandrainst/danlp/blob/master/docs/docs/datasets.md#angrytweets) and load it into R.  
+```{r}
+angry_raw <- read_csv("./data/game_tweets.csv", 
+											col_types = cols(twitterid = col_character()))
+```
+Q2: Clean the `annotation`-column, so it only includes "positive", "negative" and "neutral" for annotaters who agree. (use the function)
+```{r}
+extract_annotations <- function(str_vec) {
+	# Extract all the words
+	extracted_words <- str_extract_all(str_vec, "\\w+")
+	# Figure out whether all words are the same
+	is_the_same <- map_lgl(extracted_words, ~all(.x ==.x[1]))
+	first_word <- map_chr(extracted_words, 1) # First word from sublist
+	return(ifelse(is_the_same, first_word, NA))
+}
+
+
+angry_clean <- angry_raw %>% 
+	mutate(annotation = extract_annotations(annotation), 
+				 annotation = na_if(annotation, "skip")) %>% 
+	drop_na()
+```
+
+
+
+Q2: In a new tibble, scrape all the tweets from the angrytweets data (HINT: use the `lookup_statuses()`-function)
+```{r}
+angry_scraped <- lookup_statuses(angry_raw$twitterid)
+angry_scraped_clean <- angry_scraped %>% 
+	select(status_id, created_at, screen_name, text, favorite_count, retweet_count)
+```
+
+Q3: Join the two tibbles
+```{r}
+angry_join <- angry_clean %>% 
+	left_join(angry_scraped_clean, by = c("twitterid"="status_id"))
+```
+
+### Step 2: Analyze! 
+Q1: Who is the most and least positive person? (extra: can you solve this using a function?)
+```{r}
+find_top_tweeter <- function(tweet_df, annotation_type) {
+	tweet_df %>% 
+		filter(annotation==annotation_type) %>% 
+		group_by(screen_name) %>% 
+		count() %>% 
+		ungroup() %>% 
+		drop_na() %>% 
+		slice_max(n)
+}
+
+
+# Positive
+angry_join %>% 
+	find_top_tweeter("positiv")
+
+# Negativ
+angry_join %>% 
+	find_top_tweeter("negativ")
+
+```
+Q2: How has the proportion of positive and negative tweets changed over time? 
+```{r}
+angry_join %>% 
+	select(created_at, annotation) %>% 
+	drop_na() %>% 
+	filter(annotation %in% c("positiv", "negativ")) %>% 
+	mutate(date = lubridate::week(created_at)) %>% 
+	group_by(date) %>% 
+	summarise(num_negativ = sum(annotation=="negativ"), 
+						num_positiv = sum(annotation=="positiv")) %>% 
+	ggplot(aes(x=date)) + 
+	geom_line(aes(y=num_negativ), colour="red") + 
+	geom_line(aes(y=num_positiv), colour="green") + 
+	theme_minimal() + 
+	labs(title = "Positivity vs Negativity over time", 
+			 subtitle = "Green is positive, red is negative", 
+			 y = "Number of Tweets")
+```
+Q3 (Advanced): Create a TF-IDF of the different sentiment types. What words are most used in each? (HINT: check out [This guide](https://www.tidytextmining.com/tfidf.html))
+```{r}
+# Creating the tf_idf
+angry_tf_idf <- angry_join %>% 
+	select(annotation, text) %>% 
+	unnest_tokens(word, text) %>% 
+	count(annotation, word, sort=T) %>% 
+	bind_tf_idf(word, annotation, n) %>% 
+	arrange(desc(tf_idf))
+
+angry_tf_idf %>% 
+	group_by(annotation) %>% 
+	# Selecting ten most used words within each annotation
+	slice_max(tf_idf, n = 10) %>% 
+	ungroup() %>% 
+	# fct_reorder() sorts the word in terms of it's tf-idf
+	ggplot(aes(tf_idf, fct_reorder(word, tf_idf), fill=annotation)) + 
+	geom_col(show.legend = FALSE) + 
+	# scales="free" makes each facet have it's own scale
+	facet_wrap(~annotation, ncol=2, scales="free") + 
+	theme_minimal() + 
+	labs(y = NULL)
+```
+
