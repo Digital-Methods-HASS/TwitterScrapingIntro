@@ -46,7 +46,7 @@ The main function for searching for tweets is (unsurprisingly) `search_tweets()`
 
 For our purpose we will look at only metoo and only in english without any retweets. We can do this as follows: 
 ```{r}
-metoo <- search_tweets("#metoo lang:en", n=5000, include_rts = F)
+metoo <- search_tweets("#metoo lang:en", n=3000, include_rts = F)
 ```
 ### Investigating the data
 Let's start by printing the head of the data
@@ -55,8 +55,14 @@ head(metoo)
 ```
 As we can see, we have a big bunch of 90 columns! However, many seem to be nan's. Let's have a closer look at how many missing values there are in each
 ```{r}
+# Function to check the number of NA's 
+number_na <- function(x) {
+	sum(is.na(x))
+}
+
+
 metoo %>% 
-	summarise(across(everything(), ~sum(is.na(.x))))
+	summarise(across(everything(),number_na))
 ```
 Some of the columns like `text`, `screen_name` and `created_at` are never missing, while other's like `reply_to_status_id` mostly are. In general, it is a good idea to `select()` the specific ones you need for a specific analysis, so the data becomes easier to manage. 
 
@@ -89,12 +95,18 @@ Too be a bit more specific, it might be interesting to look at which words are m
 metoo_words <- metoo %>% 
 	unnest_tokens(word, text) %>% 
 	count(word, sort=TRUE)
+
+metoo_words
 ```
 That is absolutely not interesting as the top words are filled with so called stop-words. Luckily, rtweet has our back with `stopwordslang` dataframe. The dataframe includes the most used words in different languages. Let's remove the common occurences!
 
 ```{r}
 stop_words <- stopwordslangs %>% 
-	filter(p > 0.9999)
+	filter(p > 0.9999) %>% 
+	select(word) %>% 
+	# Adding weird url, stuff
+	bind_rows(c(word="t.co"), 
+						c(word="https"))
 
 common_metoo_words <- metoo_words %>% 
 	anti_join(stop_words, by="word") %>% 
